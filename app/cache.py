@@ -1,50 +1,87 @@
-import time
 import json
 import sqlite3
-import threading
-from typing import Any, Optional
-from config import DB_PATH
+import os
 
-_in_memory_cache = {}
-_lock = threading.Lock()
+# قراءة مسار قاعدة البيانات من متغيرات البيئة مباشرة، وإذا لم تكن موجودة يتم إنشاء ملف محلي بأمان
+DB_PATH = os.getenv("DATABASE_URL", "tradepilot_cache.db")
 
-def get_cache(key: str) -> Optional[Any]:
-    with _lock:
-        entry = _in_memory_cache.get(key)
-        if entry and time.time() < entry["expire"]:
-            return entry["value"]
-    return None
+def init_db():
+    """تهيئة قاعدة البيانات للكاش إذا لم تكن موجودة."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cache (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            expire INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-def set_cache(key: str, value: Any, ttl: int = 300):
-    with _lock:
-        _in_memory_cache[key] = {
-            "value": value,
-            "expire": time.time() + ttl
-        }
+# تشغيل التهيئة تلقائياً عند استدعاء الملف
+init_db()
+
+def get_cache(key: str):
+    """جلب البيانات من الكاش بناءً على المفتاح."""
     try:
         conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS cache
-                     (key TEXT PRIMARY KEY, value TEXT, expire REAL)''')
-        c.execute('''INSERT OR REPLACE INTO cache VALUES (?, ?, ?)''',
-                  (key, json.dumps(value), time.time() + ttl))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
-
-def fallback_from_db(key: str) -> Optional[Any]:
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT value, expire FROM cache WHERE key=?", (key,))
-        row = c.fetchone()
-        conn.close()
+        cursor = conn.cursor()
+        import time
+        current_time = int(time.time())
+        
+        cursor.execute("SELECT value, expire FROM cache WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        
         if row:
             value, expire = row
-            if time.time() < expire:
+            if expire == 0 or expire > current_time:
                 return json.loads(value)
+            else:
+                # حذف الكاش المنتهي الصلاحية
+                cursor.execute("DELETE FROM cache WHERE key = ?", (key,))
+                conn.commit()
+        return None
     except Exception:
-        pass
-    return None
+        return None
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
+def set_cache(key: str, value: dict, expire: int = 0):
+    """حفظ البيانات في الكاش مع تحديد وقت الصلاحية بالثواني."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        import time
+        
+        expire_time = int(time.time()) + expire if expire > 0 else 0
+        value_str = json.dumps(value)
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO cache (key, value, expire)
+            VALUES (?, ?, ?)
+        """, (key, value_str, expire_time))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+def fallback_from_db(key: str):
+    """دالة احتياطية لجلب البيانات القديمة حتى لو انتهت صلاحيتها في حال حدوث خطأ في السيرفر."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM cache WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        if row:
+            return json.loads(row[0])
+        return {}
+    except Exception:
+        return {}
+    finally:
+        if 'conn' in locals():
+            conn.close()
