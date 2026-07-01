@@ -22,8 +22,9 @@ def fetch_live_market_data(coin_id="bitcoin", timeframe="1d"):
             data = response.json()
             prices = [item[1] for item in data["prices"]]
             
+            # فلترة البيانات لتعكس الفريم المطلوب بدقة أكبر
             if timeframe == "1m" and len(prices) > 20: return prices[-20:]
-            if timeframe == "5m" and len(prices) > 50: return prices[-50:]
+            if timeframe == "5m" and len(prices) > 60: return prices[-60:]
             if timeframe == "15m" and len(prices) > 100: return prices[-100:]
             if timeframe == "30m" and len(prices) > 150: return prices[-150:]
             if timeframe == "1h" and len(prices) > 168: return prices[-168:]
@@ -57,14 +58,15 @@ def calculate_indicators(prices):
     latest_macd = df['macd'].iloc[-1]
     latest_signal = df['signal'].iloc[-1]
     
-    if latest_rsi <= 35 and latest_macd > latest_signal:
-        decision = "BUY"
-    elif latest_rsi >= 65 and latest_macd < latest_signal:
-        decision = "SELL"
-    elif 35 < latest_rsi < 45:
-        decision = "ACCUMULATE"
+    # تفكيك الشروط لتعطي مرونة وديناميكية عالية في القرارات
+    if latest_rsi <= 35 or (latest_rsi < 45 and latest_macd > latest_signal):
+        decision = "🟢 BUY (شراء)"
+    elif latest_rsi >= 65 or (latest_rsi > 55 and latest_macd < latest_signal):
+        decision = "🔴 SELL (بيع)"
+    elif 35 < latest_rsi <= 50 and latest_macd >= latest_signal:
+        decision = "🟡 ACCUMULATE (تجميع)"
     else:
-        decision = "HOLD"
+        decision = "⚪ HOLD (مراقبة)"
         
     return float(latest_rsi), float(latest_macd - latest_signal), decision
 
@@ -81,14 +83,14 @@ def generate_trading_decision(coin_id="bitcoin", timeframe="1d"):
     current_price = prices[-1]
     rsi_value, macd_diff, decision = calculate_indicators(prices)
 
-    confidence = f"HIGH ({timeframe.upper()} Frame Match)" if decision in ["BUY", "SELL"] else f"MEDIUM ({timeframe.upper()} Scan)"
+    confidence = f"HIGH ({timeframe.upper()} Frame Match)" if "BUY" in decision or "SELL" in decision else f"MEDIUM ({timeframe.upper()} Scan)"
 
-    if rsi_value > 55:
-        market_trend = "صعودي (Bullish)"
-    elif rsi_value < 45:
-        market_trend = "هبوطي (Bearish)"
+    if rsi_value > 52:
+        market_trend = "صعودي (Bullish) 📈"
+    elif rsi_value < 48:
+        market_trend = "هبوطي (Bearish) 📉"
     else:
-        market_trend = "مستقر/عرضي (Sideways)"
+        market_trend = "مستقر/عرضي (Sideways) ⚖️"
 
     metrics = {
         "asset": coin_id.upper(),
@@ -98,6 +100,7 @@ def generate_trading_decision(coin_id="bitcoin", timeframe="1d"):
         "confidence": confidence,
         "market_trend": market_trend
     }
-    expire_time = 30 if timeframe in ["1m", "5m", "15m"] else 300
+    # كاش سريع للفريمات الصغيرة لتحديث أسرع للأزرار
+    expire_time = 15 if timeframe in ["1m", "5m"] else 120
     set_cache(cache_key, metrics, expire=expire_time)
     return metrics
