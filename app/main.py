@@ -1,6 +1,7 @@
 import os
 import discord
 import datetime
+import random
 from discord.ext import commands
 from discord.ui import Button, View
 from app.analyzer import generate_trading_decision
@@ -36,7 +37,6 @@ class PremiumMultiTabView(View):
     def build_interface(self):
         self.clear_items()
         
-        # الصف 0: أزرار التحكم في الفريمات الزمنية (4 أزرار - متوافق وممتاز)
         framerates = ["5m", "1h", "4h", "1d"]
         for tf in framerates:
             is_active = (tf == self.current_tf)
@@ -45,7 +45,6 @@ class PremiumMultiTabView(View):
             btn.callback = self.on_tab_click
             self.add_item(btn)
 
-        # الصف 1 والصف 2: نوزع الـ 6 أزرار تحليليّة بالتساوي (3 في كل صف) لتجنب حد ديسكورد الأقصى
         tabs = [
             ("chart", "📈 Chart"), ("ai", "🧠 AI Control"), ("indicators", "📊 Indicators"),
             ("whale", "🐋 OnChain"), ("news", "📰 News & Sent"), ("backtest", "📚 Backtest")
@@ -54,7 +53,6 @@ class PremiumMultiTabView(View):
             is_active = (tab_id == self.current_tab)
             style = discord.ButtonStyle.danger if is_active else discord.ButtonStyle.secondary
             
-            # هندسة الصفوف التلقائية: أول 3 أزرار تأخذ Row 1، والثلاثة المتبقية تأخذ Row 2
             target_row = 1 if idx < 3 else 2
             
             btn = Button(label=label, style=style, custom_id=f"tp_tab:{self.coin_lower}:{self.current_tf}:{tab_id}", row=target_row)
@@ -116,6 +114,7 @@ def build_premium_dashboard_embed(data, coin_lower, timeframe, logo_url, tab="ch
                   f"🔹 On-Chain Engine: **`{data.get('onchain_consensus')}`**\n"
                   f"🔹 Sentiment Engine: **`{data.get('sentiment_consensus')}`**\n"
                   f"🎛️ **Final AI Consensus Decision:** **`{data.get('decision')}`**\n\n"
+                  f"📈 احتمال الصعود: `{data.get('prob_up', 50)}%`  |  📉 احتمال الهبوط: `{data.get('prob_down', 50)}%` \n"
                   f"⚙️ AI Engine: `v3.5.2` | Prediction Model: `Titan Pro`",
             inline=False
         )
@@ -163,8 +162,9 @@ def build_premium_dashboard_embed(data, coin_lower, timeframe, logo_url, tab="ch
     if tab in ["chart", "ai"]:
         embed.add_field(name="💡 لماذا تم اتخاذ هذه التوصية؟", value=data.get("reasons"), inline=False)
 
-    ts = datetime.datetime.utcnow().timestamp()
-    embed.set_image(url=f"https://images.cryptocompare.com/sparkchart/{coin_lower.upper()}/USD/latest.png?percentage=true&ts={ts}")
+    # شحن رابط شارت بديل ومستقر ديناميكياً لتفادي الـ Broken Image
+    rand_id = random.randint(1, 100000)
+    embed.set_image(url=f"https://api.coingecko.com/api/v3/coins/{coin_lower if coin_lower != 'btc' else 'bitcoin'}/sparkline?c={rand_id}")
     embed.set_footer(text="TradePilot AI • Institutional-Grade Dashboard v1.5.2 Pro")
     return embed
 
@@ -202,4 +202,3 @@ async def analyze(ctx, coin: str = "btc"):
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
-
