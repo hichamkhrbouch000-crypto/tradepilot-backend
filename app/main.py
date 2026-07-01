@@ -55,10 +55,8 @@ async def analyze(ctx, coin: str = "btc"):
         embed.add_field(name="📊 اتجاه اتجاه السوق", value=f"🔹 {decision_data.get('market_trend')}", inline=True)
         embed.add_field(name="🔍 درجة دقة التوقع", value=f"🔹 `{decision_data.get('confidence')}`", inline=False)
         
-        # إدراج رابط الشارت الفوري كصورة أساسية أسفل البيانات المقسمة
-        chart_url = f"https://s3.tradingview.com/snapshots/{coin_lower[0]}/{coin_lower}usd.png"
-        # خيار احتياطي برابط شارت مباشر ومفتوح
-        embed.set_image(url=f"https://api.screenshotmachine.com/?key=6b4ad2&url=https://www.tradingview.com/symbols/{coin_lower.upper()}USD/&dimension=1024x768&device=desktop&format=png" if coin_lower not in ["btc", "eth"] else f"https://charts.coinmarketcap.com/static/img/charts/64x16/{'1' if coin_lower=='btc' else '1027'}.png")
+        # السطر الخارق الجديد: إدراج رابط شارت فوري ومظلم ومحدث بالثانية متناسق مع ديسكورد
+        embed.set_image(url=f"https://images.cryptocompare.com/sparkchart/{coin_lower.upper()}/USD/latest.png?ts={ctx.message.created_at.timestamp()}")
         
         # الرابط الذكي للتسويق بالعمولة في التذييل كخطوة للربح المستقبلي
         embed.set_footer(text=f"TradePilot AI • طلب بواسطة {ctx.author.name} | للتداول الفوري سجل عبر Bybit", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
@@ -73,7 +71,7 @@ async def analyze(ctx, coin: str = "btc"):
             color=discord.Color.red()
         )
         await waiting_msg.delete()
-        await ctx.send(error_embed)
+        await ctx.send(embed=error_embed)
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
