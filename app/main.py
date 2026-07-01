@@ -1,90 +1,43 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import APIKeyHeader
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from starlette.requests import Request
 import os
-from .analyzer import generate_trading_decision, analyze_technical_indicators
+import discord
+from discord.ext import commands
+from app.analyzer import generate_trading_decision, analyze_technical_indicators
 
-# قراءة مفتاح الأمان من متغيرات بيئة ريلواي لحماية المسارات الخاصة
-API_KEY = os.getenv("API_KEY", "tradepilot-mvp-key-123")
+# إعداد الصلاحيات للبوت
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.presences = True
 
-limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(
-    title="TradePilot Core API",
-    description="المحرك الخلفي الذكي لـ TradePilot وتحليل أسواق الكريبتو والمؤشرات الفنية.",
-    version="1.0.0"
-)
+# تحديد علامة التعجب ! كبادئة للأوامر
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+@bot.event
+async def on_ready():
+    print(f'تم تشغيل البوت بنجاح باسم: {bot.user.name}')
 
-api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
-
-async def verify_api_key(api_key: str = Depends(api_key_header)):
-    if not api_key or api_key != API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="مفتاح الـ X-API-KEY غير صحيح أو مفقود. يرجى تمرير API key صالح في الـ Headers."
-        )
-    return api_key
-
-@app.get("/")
-@limiter.limit("10/minute")
-def read_root(request: Request):
-    return {
-        "status": "online",
-        "message": "النظام يعمل بكفاءة. مرحباً بك في المحرك البرمجي لـ TradePilot.",
-        "endpoints_available": ["/api/v1/public-decision", "/api/v1/decision", "/api/v1/metrics"]
-    }
-
-# --- المسار العام الجديد الخاص بمنصة بلوجر (آمن وبدون قيود API_KEY) ---
-@app.get("/api/v1/public-decision")
-@limiter.limit("30/minute")
-def get_public_decision(request: Request):
-    """
-    مسار عام مخصص لمنصة بلوجر يجلب البيانات الحية بأمان ودون كشف الـ API_KEY للزوار
-    """
+@bot.command(name='analyze')
+async def analyze(ctx):
+    # إرسال رسالة انتظار للمستخدم أثناء جلب البيانات
+    await ctx.send("🔄 جاري سحب البيانات وتحليل المؤشرات الفنية للأسواق... انتظر لحظة.")
+    
     try:
+        # استدعاء دالة التحليل الفني الموجودة مسبقاً في مشروعك
         decision_data = generate_trading_decision()
-        return {
-            "success": True,
-            "data": decision_data
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"حدث خطأ أثناء معالجة البيانات العامة: {str(e)}"
-        )
-
-# --- المسارات الخاصة المحمية بكلمة السر الخاصة بك ---
-@app.get("/api/v1/decision")
-@limiter.limit("5/minute")
-def get_decision(request: Request, token: str = Depends(verify_api_key)):
-    try:
-        decision_data = generate_trading_decision()
-        return {
-            "success": True,
-            "data": decision_data
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"حدث خطأ أثناء معالجة القرار: {str(e)}"
-        )
-
-@app.get("/api/v1/metrics")
-@limiter.limit("5/minute")
-def get_metrics(request: Request, token: str = Depends(verify_api_key)):
-    try:
         metrics_data = analyze_technical_indicators()
-        return {
-            "success": True,
-            "metrics": metrics_data
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"حدث خطأ أثناء جلب المؤشرات الفنية: {str(e)}"
+        
+        # تنسيق رسالة واضحة بداخل ديسكورد بالنتائج
+        response = (
+            f"📊 **تقرير التحليل الفني لـ TradePilot AI** 📊\n\n"
+            f"🏁 **القرار الحالي:** {decision_data.get('decision', 'غير محدد')}\n"
+            f"📈 **حالة السوق:** {metrics_data.get('market_trend', 'غير معروفة')}\n"
+            f"💡 **نصيحة الأداة:** التداول بحذر وبناءً على إدارة المخاطر المستهدفة."
         )
+        await ctx.send(response)
+        
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ أثناء جلب التحليل الفني: {str(e)}")
+
+# استدعاء التوكن السري من بيئة تشغيل Railway بأمان
+TOKEN = os.getenv('DISCORD_TOKEN')
+bot.run(TOKEN)
