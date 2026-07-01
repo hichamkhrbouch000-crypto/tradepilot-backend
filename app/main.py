@@ -1,9 +1,8 @@
 import os
 import discord
 from discord.ext import commands
-from app.analyzer import generate_trading_decision, analyze_technical_indicators
+from app.analyzer import generate_trading_decision
 
-# إعداد الصلاحيات للبوت
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -11,23 +10,35 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# قاموس لتحويل الاختصارات الشائعة إلى الأسماء الكاملة التي تفهمها واجهة البيانات
+COIN_MAPPING = {
+    "btc": "bitcoin",
+    "eth": "ethereum",
+    "sol": "solana",
+    "ada": "cardano",
+    "xrp": "ripple",
+    "doge": "dogecoin",
+    "dot": "polkadot"
+}
+
 @bot.event
 async def on_ready():
     print(f'تم تشغيل البوت بنجاح باسم: {bot.user.name}')
-    # تعيين حالة البوت ليظهر للمستخدمين أنه يتابع الأوامر
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="!analyze"))
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="!analyze [عملة]"))
 
 @bot.command(name='analyze')
-async def analyze(ctx):
-    # إرسال رسالة انتظار مؤقتة مع إيموجي متحرك
-    waiting_msg = await ctx.send("🔄 **جاري سحب البيانات الفنية وتحليل مؤشرات السوق... انتظر لحظة.**")
+async def analyze(ctx, coin: str = "btc"):
+    # تحويل الرمز المكتوب لأحرف صغيرة
+    coin_lower = coin.lower()
+    # جلب الاسم الحقيقي للعملة من القاموس، وإذا لم يوجد نستخدم ما كتبه المستخدم مباشرة
+    coin_id = COIN_MAPPING.get(coin_lower, coin_lower)
+    
+    waiting_msg = await ctx.send(f"🔄 **جاري جلب البيانات الفنية وتحليل عملة `{coin_id.upper()}`...**")
     
     try:
-        # استدعاء دالات التحليل الفني من مشروعك
-        decision_data = generate_trading_decision()
-        metrics_data = analyze_technical_indicators()
+        # تمرير اسم العملة المطلوبة لدالة التحليل
+        decision_data = generate_trading_decision(coin_id)
         
-        # تحديد لون البطاقة بناءً على القرار (أخضر للشراء، أحمر للبيع، برتقالي للانتظار)
         decision = decision_data.get('decision', 'HOLD').upper()
         if "BUY" in decision:
             card_color = discord.Color.green()
@@ -36,35 +47,32 @@ async def analyze(ctx):
         else:
             card_color = discord.Color.orange()
 
-        # إنشاء بطاقة احترافية (Embed)
         embed = discord.Embed(
-            title="📊 تقرير التحليل الفني لـ TradePilot AI",
-            description="تم تحديث وتحليل المؤشرات الفنية للأسواق بناءً على الخوارزمية الذكية الحالية.",
+            title=f"📊 تقرير التحليل الذكي لعملة {decision_data.get('asset')}",
+            description=f"تحليل فني فوري معتمد على مؤشر القوة النسبية (RSI).",
             color=card_color
         )
         
-        # إضافة الحقول وتنسيقها بشكل منظم ومتقابل
-        embed.add_field(name="🏁 القرار الحالي", value=f"🔹 `{decision}`", inline=True)
-        embed.add_field(name="📈 حالة الاتجاه (Trend)", value=f"🔹 `{metrics_data.get('market_trend', 'غير معروفة')}`", inline=True)
-        embed.add_field(name="💡 نصيحة الأداة", value="⚠️ التداول ينطوي على مخاطر. يرجى دائماً الالتزام بإدارة رأس المال المستهدفة وعدم الدخول العشوائي.", inline=False)
+        embed.add_field(name="💰 السعر الحالي", value=f"🔹 `${decision_data.get('current_price'):,}`", inline=True)
+        embed.add_field(name="📈 مؤشر RSI", value=f"🔹 `{decision_data.get('rsi')}`", inline=True)
+        embed.add_field(name="🏁 القرار الحالي", value=f"🎯 **`{decision}`**", inline=True)
+        embed.add_field(name="📊 اتجاه السوق (Trend)", value=f"🔹 `{decision_data.get('market_trend')}`", inline=True)
+        embed.add_field(name="🔍 درجة الثقة", value=f"🔹 `{decision_data.get('confidence')}`", inline=True)
+        embed.add_field(name="💡 نصيحة الخوارزمية", value="⚠️ التحليل مبني على قراءة تقنية مؤتمتة لآخر 30 يوماً، يرجى الالتزام التام بإدارة مخاطر محفظتك.", inline=False)
         
-        # إضافة تذييل وشعار أسفل البطاقة
         embed.set_footer(text=f"TradePilot AI • طلب بواسطة {ctx.author.name}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
         
-        # مسح رسالة الانتظار وإرسال البطاقة الاحترافية
         await waiting_msg.delete()
         await ctx.send(embed=embed)
         
     except Exception as e:
-        # في حال حدوث أي خطأ، يتم إرساله داخل بطاقة حمراء منسقة
         error_embed = discord.Embed(
-            title="❌ حدث خطأ داخلي",
-            description=f"لم نتمكن من إتمام التحليل بسبب:\n`{str(e)}`",
+            title="❌ خطأ في جلب البيانات",
+            description=f"تأكد من كتابة رمز العملة بشكل صحيح (مثال: `btc` أو `ethereum`).\n`الخطأ: {str(e)}`",
             color=discord.Color.red()
         )
         await waiting_msg.delete()
         await ctx.send(embed=error_embed)
 
-# استدعاء التوكن السري
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot.run(TOKEN)
